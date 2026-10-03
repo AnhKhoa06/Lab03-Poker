@@ -133,9 +133,18 @@ public class Hand implements Iterable<Card>, Comparable<Hand> {
 	/* ---------------- Exercise 12: poker hands ---------------- */
 
 	/**
-	 * Determines the poker hand type of this hand. Simplification: only ace-low
-	 * straights are recognized (Ace, Two, Three, Four, Five is a straight, but
-	 * Ten, Jack, Queen, King, Ace is not).
+	 * @param pRank A rank.
+	 * @return The value of the rank in poker, where the Ace is the highest card
+	 *         (value 14). Used only to break ties between hands of the same type.
+	 */
+	private static int value(Rank pRank) {
+		return pRank == Rank.ACE ? 14 : pRank.ordinal() + 1;
+	}
+
+	/**
+	 * Determines the poker hand type of this hand. Both ace-low (Ace, Two, Three,
+	 * Four, Five) and ace-high (Ten, Jack, Queen, King, Ace) straights are
+	 * recognized.
 	 * 
 	 * @return The poker hand type of this hand.
 	 * @pre size() == 5
@@ -194,7 +203,7 @@ public class Hand implements Iterable<Card>, Comparable<Hand> {
 		return true;
 	}
 
-	/** Ace-low straights only. */
+	/** Recognizes ace-low (A-2-3-4-5) and ace-high (10-J-Q-K-A) straights. */
 	private boolean isStraight() {
 		int min = Integer.MAX_VALUE;
 		int max = Integer.MIN_VALUE;
@@ -208,12 +217,67 @@ public class Hand implements Iterable<Card>, Comparable<Hand> {
 			min = Math.min(min, ordinal);
 			max = Math.max(max, ordinal);
 		}
-		return max - min == 4;
+		if (max - min == 4) {
+			return true; // five consecutive ranks, including Ace, Two, Three, Four, Five
+		}
+		return seen[Rank.ACE.ordinal()] && seen[Rank.TEN.ordinal()] && seen[Rank.JACK.ordinal()]
+				&& seen[Rank.QUEEN.ordinal()] && seen[Rank.KING.ordinal()];
 	}
 
 	/**
-	 * Creates a comparator that compares hands by the strength of their poker
-	 * hand type only (card values are not used to break ties).
+	 * @return The highest card of a straight. In Ace, Two, Three, Four, Five the
+	 *         Ace is low, so the high card is the Five.
+	 * @pre isStraight()
+	 */
+	private int straightHigh() {
+		int highest = 0;
+		boolean hasAce = false;
+		boolean hasTwo = false;
+		for (Card card : aCards) {
+			highest = Math.max(highest, value(card.rank()));
+			hasAce = hasAce || card.rank() == Rank.ACE;
+			hasTwo = hasTwo || card.rank() == Rank.TWO;
+		}
+		return hasAce && hasTwo ? 5 : highest;
+	}
+
+	/**
+	 * Computes the values used to break ties between two hands of the same type,
+	 * in decreasing order of importance. For a straight, only the high card
+	 * matters. Otherwise, the distinct ranks are listed by decreasing number of
+	 * occurrences, then by decreasing value. For example, a full house of three
+	 * Kings and two Fives gives [13, 5], and two pair of Kings and Threes with an
+	 * Ace gives [13, 3, 14].
+	 * 
+	 * @return The tie-breaking values of this hand.
+	 * @pre size() == 5
+	 */
+	private int[] tieBreakers() {
+		if (isStraight()) {
+			return new int[] { straightHigh() };
+		}
+		int[] counts = new int[15]; // indexed by poker value (2 to 14)
+		for (Card card : aCards) {
+			counts[value(card.rank())]++;
+		}
+		List<Integer> values = new ArrayList<>();
+		for (int value = 14; value >= 2; value--) {
+			if (counts[value] > 0) {
+				values.add(value);
+			}
+		}
+		values.sort((pValue1, pValue2) -> counts[pValue1] != counts[pValue2] ? counts[pValue2] - counts[pValue1]
+				: pValue2 - pValue1);
+		int[] result = new int[values.size()];
+		for (int i = 0; i < result.length; i++) {
+			result[i] = values.get(i);
+		}
+		return result;
+	}
+
+	/**
+	 * Creates a comparator that compares hands by the strength of their poker hand
+	 * type only (card values are not used to break ties).
 	 * 
 	 * @return A new Comparator instance.
 	 * @pre Both hands compared must contain exactly five cards.
@@ -222,6 +286,27 @@ public class Hand implements Iterable<Card>, Comparable<Hand> {
 		return new Comparator<Hand>() {
 			public int compare(Hand pHand1, Hand pHand2) {
 				return pHand1.getPokerHandType().compareTo(pHand2.getPokerHandType());
+			}
+		};
+	}
+
+	/**
+	 * Creates a comparator that compares hands by their full strength as poker
+	 * hands: first by poker hand type, then, for hands of the same type, by the
+	 * value of the cards (for example, three Kings beat three Twos). Hands that
+	 * differ only by suit are equal.
+	 * 
+	 * @return A new Comparator instance.
+	 * @pre Both hands compared must contain exactly five cards.
+	 */
+	public static Comparator<Hand> createByStrengthComparator() {
+		return new Comparator<Hand>() {
+			public int compare(Hand pHand1, Hand pHand2) {
+				int result = pHand1.getPokerHandType().compareTo(pHand2.getPokerHandType());
+				if (result != 0) {
+					return result;
+				}
+				return Arrays.compare(pHand1.tieBreakers(), pHand2.tieBreakers());
 			}
 		};
 	}
